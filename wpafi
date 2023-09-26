@@ -1,92 +1,139 @@
 #! /bin/bash
 
-depends()
-{
-if [[ $(type -P $@ &>/dev/null; echo $?) = 0 ]]; then
-   	return 0
-else
-	return 1
-fi
-}
+PROG_NAME=${0}
+
+die()  { printf "${PROG_NAME}: $1\n" "${@}" 1>&2; exit 1; }
+warn() { printf " - $1\n" "${@}" ; exit 1; }
+msg()  { printf "$1\n" "${@}"; }  
+
 usage ()
 {
-	printf "Usage: wpafi [OPTION]\nif OPTION not passed will start working\n"
+die "Usage: ${PROG_NAME} [OPTION]
+if no option passed. script will running in background
+	
+Options:
+  -h                   : show this help page
+  -l interface         : show wifi devices
+  -n ssid=password     : make new configuration
+  -k                   : stopping the script
+  -r                   : runing script
+  -s                   : script status 
+Examples:
+  $ ${PROG_NAME} -n tplink=12345678
+  $ ${PROG_NAME} -l wlan0"
 
-	printf "\nOPTIONS\n"
-	printf "off : turn off wpafi\n"
-	printf "new [ssid] [password] : setup new wifi"
-	printf "\n"
-	exit 1
 }
-wpafi()
+
+change_config_file()
 {
-	if [[ $1 = "--help" ]] || [[ $1 = "help" ]] ;then
-		usage
-		exit 1
-	elif [[ $1 = "list" ]] ;then
-		if [[ $(depends iwlist) = 0 ]] ; then
-			iwlist wlan0 scanning | grep -E "Cell|ESSID|Encryption" --color=no
-		fi
-		exit 1
-	fi	
+	ssid=$(msg $1 | cut -d= -f1)
+	pass=$(msg $1 | cut -d= -f2)
 
-	if [[ $1 = "off" ]] &&
-		[[ $(pgrep dhclient) ]] &&
-	   	[[ $(pgrep wpa_supplicant) ]] ;then
-
-		pkill dhclient
-		pkill wpa_supplicant
-		exit 0
-	elif [[ $1 = "off" ]] && [[ ! $(pgrep dhclient) ]] && [[ ! $(pgrep wpa_supplicant) ]] ;then
-		printf "wpafi: already turned off\n"
-		exit 1
+	if [[ ! $ssid ]] && [[ ! $pass ]] ; then
+		warn "\n - ssid or password not set .\n"
 	fi
 
-	if [[ $1 = "new" ]] ;then
-		echo $2 $3
-		if [[ ! $2 ]] && [[ ! $3 ]] ; then
-			printf "\n - ssid or password not set .\n"
-			usage
-		fi
-
-		if [[ $(wpa_passphrase $2 $3 &>/dev/null ; echo $?) = 1 ]] ;then
-			printf "\n - ssid or password wrong . \n" 
-			usage
-		fi
-		mkdir -p /etc/wpa_supplicant
-		wpa_passphrase $2 $3 > /etc/wpa_supplicant/wpa_supplicant.conf
-		echo "done"
-
+	if [[ $(wpa_passphrase $ssid $pass &>/dev/null ; msg $?) = 1 ]] ;then
+		warn "\n - ssid or password wrong . \n" 
 	fi
-
-	if [[ $(pgrep wpa_supplicant) ]] ;then
-		pkill wpa_supplicant
-	fi
-	wpa_supplicant -B -iwlan0 -Dnl80211 -c /etc/wpa_supplicant/wpa_supplicant.conf &>/dev/null &
-
-	if [[ $(pgrep dhclient) ]] ;then
-		pkill dhclient
-	fi
-	dhclient --no-pid wlan0 &>/dev/null &
+	mkdir -p /etc/wpa_supplicant
+	wpa_passphrase $ssid $pass > /etc/wpa_supplicant/wpa_supplicant.conf
+	msg "done"
 }
-
+list_wifi_devices()
+{
+	iface=$1
+	
+	msg "wait..."
+	iwlist $iface scanning | grep -E "Cell|ESSID|Encryption" --color=no
+}
+permit()
+{
+	[[ ${UID} != 0 ]] &&
+		die "you need permision for this option : Permission denied"
+}
+off_wpafi()
+{
+	if [[ $(pgrep dhclient) ]] &&
+		[[ $(pgrep wpa_supplicant) ]] ;then
+		
+		pkill dhclient
+		pkill wpa_supplicant
+	elif [[ ! $(pgrep dhclient) ]] &&
+		[[  ! $(pgrep wpa_supplicant) ]] ;then
+		msg " - already stopped"
+	fi
+}
+run_wpafi()
+{
+	off_wpafi &>/dev/null
+	wpa_supplicant -B -iwlan0 -Dnl80211 -c /etc/wpa_supplicant/wpa_supplicant.conf &>/dev/null &
+	dhclient --no-pid wlan0 &>/dev/null &
+	msg " - up and running"
+}
+status_wpafi()
+{
+	if [[ $(pgrep dhclient) && $(pgrep wpa_supplicant) ]] ;then
+		warn "started"
+	else
+		warn "stopped"
+	fi
+}
 main()
 {
-	if [[ $1 = "--help" ]] || [[ $1 = "help" ]] ;then
-		usage	
-	fi
-	if [[ $UID != 0 ]] ;then
-		printf "wpafi: cannot run without root : Permission denied\n"
-		exit 1
-	fi
+	arg0=$1
 
-	if [[ $(depends iwlist wpa_passphrase wpa_supplicant dhclient pkill pgrep) ]] ;then
-		printf "you need this dependencies : depends iwlist wpa_passphrase wpa_supplicant dhclient pkill pgrep\n"
-		exit 1
-	fi
+	[[ ${arg0} = @(-h|--help) ]] &&
+		usage
+	[[ ! ${arg0} ]] &&
+		permit && run_wpafi
 
-	wpafi $@
+	while getopts "n:l:hrks" argv ;do
+		case ${argv} in
+			h)
+				usage 
+				;;
+			r)
+				permit 
+				is_run_wpafi=true
+				;;
+			k)
+				permit 
+				is_off_wpafi=true
+				;;
+			n)
+				permit
+				is_change_config_file=true
+				change_config_file_opt=${OPTARG}
+				;;
+			l)
+				permit
+				is_list_wifi_devices=true
+				list_wifi_devices_opt=${OPTARG}
+				;;
+			s)
+				permit
+				is_status_wpafi=true
+				;;
+			:)
+				usage 
+				;;
+			?)
+				usage
+				;;
+		esac
+	done
 
+	[[ ${is_run_wpafi} ]] &&
+		run_wpafi
+	[[ ${is_off_wpafi} ]] &&
+		off_wpafi
+	[[ ${is_change_config_file} ]] &&
+		change_config_file ${change_config_file_opt}
+	[[ ${is_list_wifi_devices} ]] &&
+		list_wifi_devices ${list_wifi_devices_opt}
+	[[ ${is_status_wpafi} ]] &&
+		status_wpafi
 }
 
 main $@
