@@ -10,6 +10,7 @@ usage ()
 {
 die "Usage: ${PROG_NAME} [OPTION]
 if no option passed. script will running in background
+	if already runned . will restart
 	
 Options:
   -h                   : show this help page
