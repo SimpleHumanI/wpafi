@@ -1,0 +1,92 @@
+#! /bin/bash
+
+depends()
+{
+if [[ $(type -P $@ &>/dev/null; echo $?) = 0 ]]; then
+   	return 0
+else
+	return 1
+fi
+}
+usage ()
+{
+	printf "Usage: wpafi [OPTION]\nif OPTION not passed will start working\n"
+
+	printf "\nOPTIONS\n"
+	printf "off : turn off wpafi\n"
+	printf "new [ssid] [password] : setup new wifi"
+	printf "\n"
+	exit 1
+}
+wpafi()
+{
+	if [[ $1 = "--help" ]] || [[ $1 = "help" ]] ;then
+		usage
+		exit 1
+	elif [[ $1 = "list" ]] ;then
+		if [[ $(depends iwlist) = 0 ]] ; then
+			iwlist wlan0 scanning | grep -E "Cell|ESSID|Encryption" --color=no
+		fi
+		exit 1
+	fi	
+
+	if [[ $1 = "off" ]] &&
+		[[ $(pgrep dhclient) ]] &&
+	   	[[ $(pgrep wpa_supplicant) ]] ;then
+
+		pkill dhclient
+		pkill wpa_supplicant
+		exit 0
+	elif [[ $1 = "off" ]] && [[ ! $(pgrep dhclient) ]] && [[ ! $(pgrep wpa_supplicant) ]] ;then
+		printf "wpafi: already turned off\n"
+		exit 1
+	fi
+
+	if [[ $1 = "new" ]] ;then
+		echo $2 $3
+		if [[ ! $2 ]] && [[ ! $3 ]] ; then
+			printf "\n - ssid or password not set .\n"
+			usage
+		fi
+
+		if [[ $(wpa_passphrase $2 $3 &>/dev/null ; echo $?) = 1 ]] ;then
+			printf "\n - ssid or password wrong . \n" 
+			usage
+		fi
+		mkdir -p /etc/wpa_supplicant
+		wpa_passphrase $2 $3 > /etc/wpa_supplicant/wpa_supplicant.conf
+		echo "done"
+
+	fi
+
+	if [[ $(pgrep wpa_supplicant) ]] ;then
+		pkill wpa_supplicant
+	fi
+	wpa_supplicant -B -iwlan0 -Dnl80211 -c /etc/wpa_supplicant/wpa_supplicant.conf &>/dev/null &
+
+	if [[ $(pgrep dhclient) ]] ;then
+		pkill dhclient
+	fi
+	dhclient --no-pid wlan0 &>/dev/null &
+}
+
+main()
+{
+	if [[ $1 = "--help" ]] || [[ $1 = "help" ]] ;then
+		usage	
+	fi
+	if [[ $UID != 0 ]] ;then
+		printf "wpafi: cannot run without root : Permission denied\n"
+		exit 1
+	fi
+
+	if [[ $(depends iwlist wpa_passphrase wpa_supplicant dhclient pkill pgrep) ]] ;then
+		printf "you need this dependencies : depends iwlist wpa_passphrase wpa_supplicant dhclient pkill pgrep\n"
+		exit 1
+	fi
+
+	wpafi $@
+
+}
+
+main $@
