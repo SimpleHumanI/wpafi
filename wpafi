@@ -4,13 +4,14 @@ PROG_NAME=$(basename ${0})
 
 die()  { printf "${PROG_NAME}: $1\n" "${@}" 1>&2; exit 1; }
 warn() { printf " - $1\n" "${@}" ; exit 1; }
-msg()  { printf "$1\n" "${@}"; }  
+msg()  { printf "$1\n" "${@}"; }
+info() { printf "==> $1 \n" "${@}" ;}
 
 usage ()
 {
 die "Usage: ${PROG_NAME} [OPTION]
-if no option is passed, the script will run in the background
-if it has already been implemented. it will reboot
+if no option passed. script will running in background
+	if already runned . will restart
 	
 Options:
   -h                   : show this help page
@@ -31,21 +32,21 @@ change_config_file()
 	pass=$(msg $1 | cut -d= -f2)
 
 	if [[ ! $ssid ]] && [[ ! $pass ]] ; then
-		warn "\n - ssid or password not set .\n"
+		warn "\nssid or password not set .\n"
 	fi
 
 	if [[ $(wpa_passphrase $ssid $pass &>/dev/null ; msg $?) = 1 ]] ;then
-		warn "\n - ssid or password wrong . \n" 
+		warn "\nssid or password wrong . \n" 
 	fi
 	mkdir -p /etc/wpa_supplicant
 	wpa_passphrase $ssid $pass > /etc/wpa_supplicant/wpa_supplicant.conf
-	msg "done"
+	info "done"
 }
 list_wifi_devices()
 {
 	iface=$1
 	
-	msg "wait..."
+	info "wait..."
 	iwlist $iface scanning | grep -E "Cell|ESSID|Encryption" --color=no
 }
 permit()
@@ -60,34 +61,61 @@ off_wpafi()
 		
 		pkill dhclient
 		pkill wpa_supplicant
+		
+		info "stopped"
 	elif [[ ! $(pgrep dhclient) ]] &&
 		[[  ! $(pgrep wpa_supplicant) ]] ;then
-		msg " - already stopped"
+		info "already stopped"
 	fi
-}
-run_wpafi()
-{
-	off_wpafi &>/dev/null
-	wpa_supplicant -B -iwlan0 -Dnl80211 -c /etc/wpa_supplicant/wpa_supplicant.conf &>/dev/null &
-	dhclient --no-pid wlan0 &>/dev/null &
-	msg " - up and running"
 }
 status_wpafi()
 {
 	if [[ $(pgrep dhclient) && $(pgrep wpa_supplicant) ]] ;then
-		warn "started"
+		info "status : on"
 	else
-		warn "stopped"
+		info "status : off"
 	fi
 }
+run_wpafi()
+{
+	is_net_ok=false
+
+	if [[ $(pgrep dhclient) && $(pgrep wpa_supplicant) ]] ;then
+		die "status : on"
+	fi
+
+	info "wait..."
+
+	off_wpafi &>/dev/null
+	wpa_supplicant -B -iwlan0 -Dnl80211 -c /etc/wpa_supplicant/wpa_supplicant.conf &>/dev/null &
+	dhclient --no-pid wlan0 &>/dev/null &
+	
+	for (( i=0 ; i < 10 ; i++)) ;do
+		stat_code=$(curl --location --silent --write-out '%{http_code}\n' "https://api.duckduckgo.com")
+		if [[ ${stat_code} = "200" ]] ;then
+			is_net_ok=true
+			break
+		fi
+		sleep 1
+	done
+	
+	if [[ ${is_net_ok} = true ]] ;then
+		info "connected"
+	else
+		info "problem in connecting to wifi"
+	fi
+}
+
 main()
 {
 	arg0=$1
 
 	[[ ${arg0} = @(-h|--help) ]] &&
 		usage
-	[[ ! ${arg0} ]] &&
-		permit && run_wpafi
+	if [[ ! ${arg0} ]] ;then
+		permit
+		run_wpafi
+	fi
 
 	while getopts "n:l:hrks" argv ;do
 		case ${argv} in
