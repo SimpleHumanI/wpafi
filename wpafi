@@ -9,8 +9,8 @@ msg()  { printf "$1\n" "${@}"; }
 usage ()
 {
 die "Usage: ${PROG_NAME} [OPTION]
-if no option passed. script will running in background
-	if already runned . will restart
+if no option is passed, the script will run in the background
+if it has already been implemented. it will reboot
 	
 Options:
   -h                   : show this help page
