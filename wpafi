@@ -91,7 +91,7 @@ run_wpafi()
 	dhclient --no-pid wlan0 &>/dev/null &
 	
 	for (( i=0 ; i < 10 ; i++)) ;do
-		stat_code=$(curl --location --silent --write-out '%{http_code}\n' "https://api.duckduckgo.com")
+		stat_code=$(curl --connect-timeout 0.8 --location --silent --write-out '%{http_code}\n' "https://api.duckduckgo.com" -o /dev/null)
 		if [[ ${stat_code} = "200" ]] ;then
 			is_net_ok=true
 			break
