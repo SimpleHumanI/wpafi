@@ -1,9 +1,11 @@
-# wpafi
 ## description
 cli script for easy to use wpa_supplicant
 
-# requirements
-## archlinux
+## requirements
 ```bash
-$ pacman -S wireless_tools wpa_supplicant dhclient procps-ng
+Archlinux
+# pacman -S wireless_tools wpa_supplicant dhclient procps-ng coreutils
+
+Debian
+# apt install wireless-tools wpasupplicant isc-dhcp-client procps coreutils
 ```
