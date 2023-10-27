@@ -1,6 +1,8 @@
 #! /bin/bash
 
 PROG_NAME=$(basename ${0})
+wpa_dir="/etc/wpa_supplicant"
+wpa_file="${wpa_dir}/wpa_supplicant.conf"
 
 die()  { printf "${PROG_NAME}: $1\n" "${@}" 1>&2; exit 1; }
 warn() { printf " - $1\n" "${@}" ; exit 1; }
@@ -14,15 +16,16 @@ if no option passed. script will running in background
 	if already runned . will restart
 	
 Options:
-  -h                   : show this help page
-  -l interface         : show wifi devices
-  -n ssid=password     : make new configuration
-  -k                   : stopping the script
-  -r                   : runing script
-  -s                   : script status 
+  -h                : show this help page
+  -i interface      : set network interface
+  -l                : show wifi devices
+  -n ssid=password  : make new configuration
+  -k                : stopping the script
+  -r                : runing script
+  -s                : script status 
 Examples:
-  $ ${PROG_NAME} -n tplink=12345678
-  $ ${PROG_NAME} -l wlan0"
+  $ ${PROG_NAME} -i wlan0 -n tplink=12345678
+  $ ${PROG_NAME} -i wlan0 -l"
 
 }
 
@@ -30,16 +33,25 @@ change_config_file()
 {
 	ssid=$(msg $1 | cut -d= -f1)
 	pass=$(msg $1 | cut -d= -f2)
+	iface=$(msg $2)
+
+	if [[ ! $iface ]] ;then
+		warn "interface not set"
+	fi
 
 	if [[ ! $ssid ]] && [[ ! $pass ]] ; then
-		warn "\nssid or password not set .\n"
+		warn "ssid or password not set ."
 	fi
 
 	if [[ $(wpa_passphrase $ssid $pass &>/dev/null ; msg $?) = 1 ]] ;then
-		warn "\nssid or password wrong . \n" 
+		warn "ssid or password wrong ." 
 	fi
-	mkdir -p /etc/wpa_supplicant
-	wpa_passphrase $ssid $pass > /etc/wpa_supplicant/wpa_supplicant.conf
+	
+	msg "# if you are using wpafi DONT EDIT THID FILE" > ${wpa_file}
+	msg "# iface=${iface}" >> ${wpa_file}
+	mkdir -p ${wpa_dir}
+	wpa_passphrase ${ssid} ${pass} >> ${wpa_file}
+	
 	info "done"
 }
 list_wifi_devices()
@@ -71,39 +83,44 @@ off_wpafi()
 status_wpafi()
 {
 	if [[ $(pgrep dhclient) && $(pgrep wpa_supplicant) ]] ;then
-		info "status : on"
+		info "wpafi status : on"
 	else
-		info "status : off"
+		info "wpafi status : off"
 	fi
 }
-run_wpafi()
+internet_status()
 {
-	is_net_ok=false
-
-	if [[ $(pgrep dhclient) && $(pgrep wpa_supplicant) ]] ;then
-		die "status : on"
-	fi
-
-	info "wait..."
-
-	off_wpafi &>/dev/null
-	wpa_supplicant -B -iwlan0 -Dnl80211 -c /etc/wpa_supplicant/wpa_supplicant.conf &>/dev/null &
-	dhclient --no-pid wlan0 &>/dev/null &
-	
 	for (( i=0 ; i < 10 ; i++)) ;do
-		stat_code=$(curl --connect-timeout 0.8 --location --silent --write-out '%{http_code}\n' "https://api.duckduckgo.com" -o /dev/null)
+		stat_code=$(curl --connect-timeout 1.5 --location --silent --write-out '%{http_code}\n' "https://api.duckduckgo.com" -o /dev/null)
 		if [[ ${stat_code} = "200" ]] ;then
 			is_net_ok=true
 			break
 		fi
 		sleep 1
 	done
-	
+
 	if [[ ${is_net_ok} = true ]] ;then
-		info "connected"
+		info "internet status : connected"
 	else
-		info "problem in connecting to wifi"
+		info "internat status : not connected"
 	fi
+}
+run_wpafi()
+{
+	iface=$(cat ${wpa_file} | grep iface | cut -d'=' -f2)
+	is_net_ok=false
+
+	if [[ $(pgrep dhclient) && $(pgrep wpa_supplicant) ]] ;then
+		die "wpafi status : on"
+	fi
+
+	info "wait..."
+	off_wpafi &>/dev/null
+	wpa_supplicant -B -i${iface} -c /etc/wpa_supplicant/wpa_supplicant.conf &>/dev/null & 
+	dhclient --no-pid wlan0 &>/dev/null &
+
+	internet_status
+	status_wpafi
 }
 
 main()
@@ -117,7 +134,7 @@ main()
 		run_wpafi
 	fi
 
-	while getopts "n:l:hrks" argv ;do
+	while getopts "i:n:l:hrks" argv ;do
 		case ${argv} in
 			h)
 				usage 
@@ -144,6 +161,11 @@ main()
 				permit
 				is_status_wpafi=true
 				;;
+			i)
+				permit
+				is_iface=true
+				is_iface_opt=${OPTARG}
+				;;
 			:)
 				usage 
 				;;
@@ -154,15 +176,23 @@ main()
 	done
 
 	[[ ${is_run_wpafi} ]] &&
-		run_wpafi
+		run_wpafi && exit
 	[[ ${is_off_wpafi} ]] &&
-		off_wpafi
-	[[ ${is_change_config_file} ]] &&
-		change_config_file ${change_config_file_opt}
-	[[ ${is_list_wifi_devices} ]] &&
-		list_wifi_devices ${list_wifi_devices_opt}
+		off_wpafi && exit 
 	[[ ${is_status_wpafi} ]] &&
-		status_wpafi
+		status_wpafi && exit 
+
+	if [[ ${is_change_config_file} ]] && [[ ${is_iface} ]] ;then
+		change_config_file ${change_config_file_opt} ${is_iface_opt}
+	else
+		usage
+	fi
+	if [[ ${is_list_wifi_devices} ]] && [[ ${is_iface} ]] ;then
+		list_wifi_devices ${list_wifi_devices_opt} ${is_iface_opt}
+	else
+		usage
+	fi
+
 }
 
 main $@
