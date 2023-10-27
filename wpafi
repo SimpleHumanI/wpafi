@@ -3,6 +3,8 @@
 PROG_NAME=$(basename ${0})
 wpa_dir="/etc/wpa_supplicant"
 wpa_file="${wpa_dir}/wpa_supplicant.conf"
+depend_list=("wpa_supplicant" "wpa_passphrase" "curl"
+   	"dhclient" "iwlist" "cat" "pgrep" "pkill" "mkdir")
 
 die()  { printf "${PROG_NAME}: $1\n" "${@}" 1>&2; exit 1; }
 warn() { printf " - $1\n" "${@}" ; exit 1; }
@@ -79,6 +81,7 @@ off_wpafi()
 		[[  ! $(pgrep wpa_supplicant) ]] ;then
 		info "already stopped"
 	fi
+
 }
 status_wpafi()
 {
@@ -121,6 +124,14 @@ run_wpafi()
 
 	internet_status
 	status_wpafi
+}
+check_depends()
+{
+	if [[ $(type $@ &>/dev/null; echo $?) = 0 ]]; then
+		return 0 
+	else 
+		return 1
+	fi
 }
 
 main()
@@ -175,12 +186,16 @@ main()
 		esac
 	done
 
-	[[ ${is_run_wpafi} ]] &&
-		run_wpafi && exit
-	[[ ${is_off_wpafi} ]] &&
-		off_wpafi && exit 
-	[[ ${is_status_wpafi} ]] &&
-		status_wpafi && exit 
+	if [[ ${is_run_wpafi} ]] ;then
+		run_wpafi 
+		exit 0
+	elif [[ ${is_off_wpafi} ]] ;then
+		off_wpafi
+		exit 0
+	elif [[ ${is_status_wpafi} ]] ;then
+		status_wpafi
+		exit 0
+	fi
 
 	if [[ ${is_change_config_file} ]] && [[ ${is_iface} ]] ;then
 		change_config_file ${change_config_file_opt} ${is_iface_opt}
@@ -195,4 +210,6 @@ main()
 
 }
 
+check_depends ${depend_list[@]} ||
+	die "missing depends : \r\n\t ${depend_list[*]}"
 main $@
