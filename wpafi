@@ -200,11 +200,13 @@ main()
 
 	if [[ ${is_change_config_file} ]] && [[ ${is_iface} ]] ;then
 		change_config_file ${change_config_file_opt} ${is_iface_opt}
+		exit 0
 	else
 		usage
 	fi
 	if [[ ${is_list_wifi_devices} ]] && [[ ${is_iface} ]] ;then
 		list_wifi_devices ${list_wifi_devices_opt} ${is_iface_opt}
+		exit 0
 	else
 		usage
 	fi
